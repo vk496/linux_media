@@ -5495,12 +5495,22 @@ fe_lla_error_t fe_stid135_diseqc_send(fe_stid135_handle_t handle,
 			}
 
 			error |= ChipSetField(pParams->handle_demod, FLD_FC8CODEW_DVBSX_DISEQC_DISTXCFG_DIS_PRECHARGE(tuner_nb), 1);
-			while(i < nbdata) { 
+			while(i < nbdata) {
+				u32 tries = 0;
+
 				error |= ChipGetField(pParams->handle_demod, FLD_FC8CODEW_DVBSX_DISEQC_DISTXSTATUS_TX_FIFO_FULL(tuner_nb), &fld_value);
-				while(fld_value) {
+				/* ChipGetField() reports 0xFF without reading once the chip
+				   handle is in error (e.g. after an I2C timeout), so give up
+				   on that and after a bounded wait instead of spinning forever */
+				while(fld_value && !pParams->handle_demod->Error && tries++ < 100) {
+					ChipWaitOrAbort(pParams->handle_demod, 10);
 					error |= ChipGetField(pParams->handle_demod, FLD_FC8CODEW_DVBSX_DISEQC_DISTXSTATUS_TX_FIFO_FULL(tuner_nb), &fld_value);
 				}
-		
+				if(fld_value) {
+					error |= FE_LLA_DISEQC_FAILED;
+					break;
+				}
+
 				error |= ChipSetOneRegister(pParams->handle_demod, (u16)REG_RC8CODEW_DVBSX_DISEQC_DISTXFIFO(tuner_nb), data[i]);	/* send byte to FIFO :: WARNING don't use set field	!! */
 				i++;
 			}
